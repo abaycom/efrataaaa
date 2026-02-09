@@ -1,2 +1,2 @@
 python-telegram-bot
-google-generativeai
+model_name='gemini-pro'
