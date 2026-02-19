@@ -192,7 +192,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif state == "AWAITING_DEP_AMT" and text.isdigit():
         context.user_data.update({"temp_amt": text, "state": "AWAITING_PHOTO"})
-        await update.message.reply_text(f"✅ {text} ብር ለመሙላት Screenshot ይላኩ።", reply_markup=back_kb())
+        await update.message.reply_text(f"✅ {text} ብር ለመሙላት account number 0921127878 ደረሰኝ Screenshot ይላኩ።", reply_markup=back_kb())
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
