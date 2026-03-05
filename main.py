@@ -5,7 +5,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 from telegram.error import BadRequest
 
 # --- ኮንፊገሬሽን ---
-TOKEN = "YOUR_BOT_TOKEN" 
+TOKEN = "" 
 ADMIN_ID = 5049565154
 
 users = {}
@@ -26,7 +26,14 @@ def main_menu_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- ዋና የጨዋታ ቦርድ ማሳያ ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    ensure_user(uid)
+    await update.effective_message.reply_text(
+        "🎰 እንኳን ወደ Virtual Keno በሰላም መጡ!\nከታች ካሉት አማራጮች አንዱን ይምረጡ፦", 
+        reply_markup=main_menu_keyboard()
+    )
+
 async def update_game_ui(update: Update, uid: int):
     keyboard = []
     for i in range(1, 81, 8):
@@ -69,7 +76,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "play":
         users[uid]['selected_num'] = [] 
         context.user_data["state"] = "AWAITING_BET"
-        await query.edit_message_text("💵 የውርርድ መጠን ያስገቡ (Min 10 Birr)፦", reply_markup=back_kb())
+        await query.edit_message_text("💵 የውርርድ መጠን ያስገቡ (Min 50 Birr)፦", reply_markup=back_kb())
         return
 
     if data.startswith("num_"):
@@ -82,40 +89,38 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "start_draw":
-        selected_count = len(users[uid]['selected_num'])
-        if selected_count == 0:
+        if not users[uid]['selected_num']:
             await query.message.reply_text("⚠️ እባክዎ ቁጥር ይምረጡ!", reply_markup=back_kb())
             return
         
         bet_amt = users[uid]['bet']
         users[uid]['balance'] -= bet_amt
         
-        for i in range(3, 0, -1):
+        for i in range(5, 0, -1):
             await query.edit_message_text(f"⏳ ዕጣው ለመውጣት {i} ሰከንድ ቀርቷል...", reply_markup=back_kb())
             await asyncio.sleep(1)
 
-        # --- ዝቅተኛ የማሸነፍ እድል (20% Chance) ---
-        if random.randint(1, 100) <= 20: 
+        # --- ዝቅተኛ የማሸነፍ እድል (25% Chance) ---
+        win_roll = random.randint(1, 100)
+        if win_roll <= 25: 
             draw = sorted(random.sample(range(1, 81), 20))
         else:
+            # ተጠቃሚው የመረጣቸውን ቁጥሮች ሆን ብሎ ማስቀረት
             pool = list(set(range(1, 81)) - set(users[uid]['selected_num']))
             draw = sorted(random.sample(pool, 20))
 
         matches = set(users[uid]['selected_num']).intersection(set(draw))
-        match_count = len(matches)
+        count = len(matches)
         
-        # --- አዲሱ የኬኖ ፎርሙላ ---
-        # Prize = (Bet * Multiplier * Matches) / Total_Selected
-        multiplier = 10 # የቤቱ ማባዣ (እንደፈለክ መቀየር ትችላለህ)
-        if match_count > 0:
-            prize = int((bet_amt * multiplier * match_count) / selected_count)
-        else:
-            prize = 0
-            
+        # --- ቀላል የሽልማት አሰላለፍ (Multiplier System) ---
+        multipliers = {0: 0, 1: 1.5, 2: 3, 3: 8, 4: 20}
+        multiplier = multipliers.get(count, 50 if count >= 5 else 0)
+        
+        prize = int(bet_amt * multiplier)
         users[uid]['balance'] += prize
         
         result = (f"🎰 **ውጤት**\n\n✅ የወጡት፦ `{draw}`\n"
-                  f"🎯 የገጠሙ፦ {match_count}\n"
+                  f"🎯 የገጠሙ፦ {count}\n"
                   f"💰 ሽልማት፦ {prize} ብር\n"
                   f"💵 ቀሪ ሂሳብ፦ {users[uid]['balance']} ብር")
         
@@ -126,14 +131,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(result, reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
         return
 
-    # --- Withdraw Approval ---
     if data.startswith("w_app_"):
         _, _, tid, amt = data.split("_")
-        await context.bot.send_message(int(tid), f"✅ የ {amt} ብር ወጪ ጥያቄዎ ጸድቋል! ገንዘቡ ተልኮልዎታል።")
-        await query.edit_message_text(f"✅ ክፍያ ለ ID {tid} ተፈጽሟል።")
+        await context.bot.send_message(int(tid), f"✅ የ {amt} ብር ማውጫ ጥያቄዎ ጸድቋል!")
+        await query.edit_message_text(f"✅ ክፍያ ለ {tid} ተፈጽሟል።")
         return
 
-    # ... (ሌሎች ተግባራት Deposit, Balance, ወዘተ እንዳሉ ናቸው)
     if data == "withdraw":
         context.user_data["state"] = "AWAITING_WITHDRAW_AMT"
         await query.edit_message_text("💸 ማውጣት የሚፈልጉትን መጠን ይጻፉ፦", reply_markup=back_kb())
@@ -143,6 +146,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = [[InlineKeyboardButton("📱 Telebirr", callback_data="p_tele"), InlineKeyboardButton("🏦 CBE", callback_data="p_cbe")],
               [InlineKeyboardButton("🔙 ተመለስ", callback_data="menu")]]
         await query.edit_message_text("የክፍያ መንገድ ይምረጡ፦", reply_markup=InlineKeyboardMarkup(kb))
+        return
+
+    if data.startswith("p_"):
+        context.user_data["state"] = "AWAITING_DEP_AMT"
+        await query.edit_message_text("💰 መሙላት የሚፈልጉትን መጠን ይጻፉ፦", reply_markup=back_kb())
         return
 
     if data == "balance":
@@ -187,12 +195,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users[uid]['balance'] -= amt
         kb = [[InlineKeyboardButton("✅ Approve", callback_data=f"w_app_{uid}_{amt}")]]
         await context.bot.send_message(ADMIN_ID, f"💸 **Withdraw Request**\nID: `{uid}`\nAmt: {amt}\nAcc: {text}", reply_markup=InlineKeyboardMarkup(kb))
-        await update.message.reply_text("✅ ጥያቄዎ ለአድሚን ደርሷል። ሲጸድቅ ይላክለታል።", reply_markup=main_menu_keyboard())
+        await update.message.reply_text("✅ ጥያቄዎ ደርሷል።", reply_markup=main_menu_keyboard())
         context.user_data.clear()
 
     elif state == "AWAITING_DEP_AMT" and text.isdigit():
         context.user_data.update({"temp_amt": text, "state": "AWAITING_PHOTO"})
-        await update.message.reply_text(f"✅ {text} ብር ለመሙላት account number 0921127878 ደረሰኝ Screenshot ይላኩ።", reply_markup=back_kb())
+        await update.message.reply_text(f"✅ {text} ብር ለመሙላት ፎቶ ይላኩ።", reply_markup=back_kb())
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
